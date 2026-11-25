@@ -94,6 +94,67 @@ class URLShortenerServerTests(unittest.TestCase):
         self.assertIn("<details>", body)
         self.assertIn("→", body)
 
+    def test_result_and_table_links_use_forwarded_origin(self):
+        headers = {
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Host": "localhost:8000",
+            "X-Forwarded-Host": "codespaces.example",
+            "X-Forwarded-Proto": "https",
+        }
+        payload = urlencode({"url": "https://example.com/article"})
+        status, _, body = self.request("POST", "/", body=payload, headers=headers)
+
+        self.assertEqual(status, 200)
+        self.assertIn('href="https://codespaces.example/1"', body)
+        self.assertIn(">https://codespaces.example/1</a>", body)
+
+        status, _, body = self.request(
+            "GET",
+            "/table",
+            headers={
+                "Host": "localhost:8000",
+                "X-Forwarded-Host": "codespaces.example",
+                "X-Forwarded-Proto": "https",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertIn('href="https://codespaces.example/1"', body)
+        self.assertIn(">https://codespaces.example/1</a>", body)
+
+    def test_result_link_falls_back_to_host_header(self):
+        payload = urlencode({"url": "https://example.com/article"})
+        status, _, body = self.request(
+            "POST",
+            "/",
+            body=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Host": "shortener.example:8000",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertIn('href="https://shortener.example:8000/1"', body)
+
+    def test_result_link_uses_forwarded_protocol(self):
+        payload = urlencode({"url": "https://example.com/article"})
+        status, _, body = self.request(
+            "POST",
+            "/",
+            body=payload,
+            headers={
+                "Content-Type": "application/x-www-form-urlencoded",
+                "Host": "localhost:8000",
+                "X-Forwarded-Host": "codespaces.example",
+                "X-Forwarded-Proto": "http",
+            },
+        )
+
+        self.assertEqual(status, 200)
+        self.assertIn('href="http://codespaces.example/1"', body)
+        self.assertIn(">http://codespaces.example/1</a>", body)
+
 
 if __name__ == "__main__":
     unittest.main()

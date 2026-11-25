@@ -49,7 +49,14 @@ class ShortenerHandler(BaseHTTPRequestHandler):
             self._send_html(200, _page("URL shortener", self._form()))
             return
         if path == "/table":
-            self._send_html(200, _page("Hash table", self._table()))
+            try:
+                content = self._table()
+            except ValueError as error:
+                self._send_html(
+                    400, _page("Invalid request", self._form(str(error)))
+                )
+                return
+            self._send_html(200, _page("Hash table", content))
             return
         if not path.startswith("/") or "/" in path[1:]:
             self._not_found()
@@ -112,20 +119,68 @@ class ShortenerHandler(BaseHTTPRequestHandler):
             )
             return
 
-        self._send_html(200, _page("URL shortened", self._form(code=code)))
+        try:
+            content = self._form(code=code)
+        except ValueError as error:
+            self._send_html(
+                400,
+                _page(
+                    "Invalid request",
+                    self._form(str(error), entered_url=url),
+                ),
+            )
+            return
+        self._send_html(200, _page("URL shortened", content))
 
-    @staticmethod
-    def _form(error: str = "", entered_url: str = "", code: str = "") -> str:
+    def _first_header_value(self, name: str) -> str:
+        return self.headers.get(name, "").split(",", 1)[0].strip()
+
+    def _short_link(self, code: str) -> str:
+        forwarded_host = self._first_header_value("X-Forwarded-Host")
+        host = forwarded_host or self._first_header_value("Host")
+        scheme = self._first_header_value("X-Forwarded-Proto") or "https"
+        scheme = scheme.lower()
+
+        if scheme not in ("http", "https"):
+            raise ValueError("Invalid forwarded protocol.")
+        if (
+            not host
+            or any(character.isspace() or character in "/\\?#@" for character in host)
+        ):
+            raise ValueError("Invalid host header.")
+        try:
+            parsed_host = urlsplit(f"//{host}")
+            parsed_host.port
+        except ValueError as error:
+            raise ValueError("Invalid host header.") from error
+        if (
+            parsed_host.hostname is None
+            or parsed_host.path
+            or parsed_host.query
+            or parsed_host.fragment
+            or parsed_host.username is not None
+            or parsed_host.password is not None
+            or parsed_host.netloc != host
+        ):
+            raise ValueError("Invalid host header.")
+
+        return f"{scheme}://{host}/{quote(code, safe='')}"
+
+    def _form(self, error: str = "", entered_url: str = "", code: str = "") -> str:
         error_section = (
             f'<p class="error" role="alert">{html.escape(error)}</p>' if error else ""
         )
         result_section = ""
         if code:
-            short_path = "/" + quote(code, safe="")
+            short_link = self._short_link(code)
+            local_path = "/" + quote(code, safe="")
             result_section = (
                 '<section class="result"><h2>Short link</h2>'
-                f'<p><a href="{html.escape(short_path, quote=True)}">'
-                f"{html.escape(short_path)}</a></p></section>"
+                f'<p><a href="{html.escape(short_link, quote=True)}">'
+                f"{html.escape(short_link)}</a></p>"
+                f'<p><a href="{html.escape(local_path, quote=True)}">'
+                f"Open on this server ({html.escape(local_path)})</a></p>"
+                "</section>"
             )
         return (
             f"{error_section}"
@@ -153,10 +208,7 @@ class ShortenerHandler(BaseHTTPRequestHandler):
             )
         return "".join(details)
 
-    @classmethod
-    def _render_index(
-        cls, title: str, table: HashTable, url_keys: bool
-    ) -> str:
+    def _render_index(self, title: str, table: HashTable, url_keys: bool) -> str:
         output = [f"<h2>{html.escape(title)}</h2>", '<ol class="buckets">']
         for index, head in enumerate(table.buckets):
             output.append(
@@ -182,17 +234,17 @@ class ShortenerHandler(BaseHTTPRequestHandler):
                     url = str(node.value)
                     key_label = "Code key"
 
-                short_path = "/" + quote(code, safe="")
+                short_link = self._short_link(code)
                 output.append(
                     '<article class="node">'
                     f"<p><strong>{key_label}:</strong> "
                     f"<code>{html.escape(node.key)}</code></p>"
                     f"<p><strong>URL:</strong> {html.escape(url)}</p>"
                     f"<p><strong>Short code:</strong> {html.escape(code)}</p>"
-                    f'<p><strong>Short link:</strong> <a href="{html.escape(short_path, quote=True)}">{html.escape(short_path)}</a></p>'
+                    f'<p><strong>Short link:</strong> <a href="{html.escape(short_link, quote=True)}">{html.escape(short_link)}</a></p>'
                     "<details><summary>Horner hash calculation</summary>"
                     "<ol>"
-                    f"{cls._hash_steps(table, node.key)}"
+                    f"{self._hash_steps(table, node.key)}"
                     "</ol></details>"
                     "</article>"
                 )
@@ -203,13 +255,12 @@ class ShortenerHandler(BaseHTTPRequestHandler):
         output.append("</ol>")
         return "".join(output)
 
-    @classmethod
-    def _table(cls) -> str:
+    def _table(self) -> str:
         return (
-            cls._render_index(
+            self._render_index(
                 "URL-to-code index", SHORTENER._url_to_code, url_keys=True
             )
-            + cls._render_index(
+            + self._render_index(
                 "Code-to-URL index", SHORTENER._code_to_url, url_keys=False
             )
         )
