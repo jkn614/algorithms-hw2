@@ -4,50 +4,74 @@ from src.hash_table import HashTable
 
 
 class HashTableTests(unittest.TestCase):
-    def test_collisions_are_stored_and_comparisons_are_counted(self):
-        table = HashTable(initial_capacity=8)
-        table["a"] = 1
-        table["i"] = 2
-
-        self.assertEqual(table["a"], 1)
-        self.assertEqual(table.last_probe_count, 1)
-        self.assertEqual(table["i"], 2)
-        self.assertEqual(table.last_probe_count, 2)
-        self.assertEqual(table.last_probe_slots, [1])
-
-    def test_overwrite_does_not_increase_size(self):
+    def test_default_capacity_and_core_interface(self):
         table = HashTable()
-        table["key"] = 1
-        table["key"] = 2
+
+        self.assertEqual(len(table._buckets), 16)
+        self.assertEqual(table.load_factor(), 0)
+        self.assertIsNone(table.get("missing"))
+        self.assertEqual(table.get("missing", "default"), "default")
+        self.assertNotIn("missing", table)
+
+        table.put("key", "first")
+        table.put("key", "updated")
 
         self.assertEqual(len(table), 1)
-        self.assertEqual(table["key"], 2)
+        self.assertIn("key", table)
+        self.assertEqual(table.get("key"), "updated")
+        self.assertEqual(table.load_factor(), 1 / 16)
 
-    def test_resize_preserves_entries(self):
-        table = HashTable(initial_capacity=2)
-        table["first"] = 1
-        table["second"] = 2
-        table["third"] = 3
+    def test_find_returns_value_and_number_of_compared_nodes(self):
+        table = HashTable(max_load=None)
+        table.put("a", 1)
+        table.put("q", 2)
 
-        self.assertGreater(table.capacity, 2)
-        self.assertEqual([table[key] for key in ("first", "second", "third")], [1, 2, 3])
+        first_value, first_comparisons = table.find("a")
+        second_value, second_comparisons = table.find("q")
 
-    def test_delete_and_missing_key(self):
+        self.assertEqual((first_value, second_value), (1, 2))
+        self.assertIn((first_comparisons, second_comparisons), ((1, 2), (2, 1)))
+
+    def test_collision_chain_uses_linked_nodes(self):
+        table = HashTable(max_load=None)
+        table.put("a", 1)
+        table.put("q", 2)
+
+        head = table._buckets[1]
+        self.assertIsNotNone(head)
+        self.assertNotIsInstance(head, list)
+        second = head.next
+        self.assertIsNotNone(second)
+        self.assertNotIsInstance(second, list)
+        self.assertIsNone(second.next)
+        self.assertEqual(
+            sorted(((head.key, head.value), (second.key, second.value))),
+            [("a", 1), ("q", 2)],
+        )
+        self.assertEqual(table.get("a"), 1)
+        self.assertEqual(table.get("q"), 2)
+
+    def test_table_doubles_capacity_after_load_limit_is_exceeded(self):
         table = HashTable()
-        table["key"] = "value"
-        del table["key"]
+        for index in range(12):
+            table.put(f"key-{index}", index)
+        self.assertEqual(len(table._buckets), 16)
 
-        self.assertNotIn("key", table)
-        with self.assertRaises(KeyError):
-            table["key"]
-        with self.assertRaises(KeyError):
-            del table["key"]
+        table.put("key-12", 12)
 
-    def test_rejects_non_string_keys_and_invalid_capacity(self):
-        with self.assertRaises(TypeError):
-            HashTable()[1] = "value"
-        with self.assertRaises(ValueError):
-            HashTable(initial_capacity=0)
+        self.assertEqual(len(table._buckets), 32)
+        self.assertEqual(len(table), 13)
+        for index in range(13):
+            self.assertEqual(table.get(f"key-{index}"), index)
+
+    def test_none_max_load_keeps_capacity_fixed(self):
+        table = HashTable(capacity=16, max_load=None)
+        for index in range(32):
+            table.put(f"key-{index}", index)
+
+        self.assertEqual(len(table._buckets), 16)
+        self.assertEqual(len(table), 32)
+        self.assertEqual(table.load_factor(), 2)
 
 
 if __name__ == "__main__":
