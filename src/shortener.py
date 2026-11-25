@@ -20,8 +20,8 @@ class URLShortener:
 
         code = encode(self._next_id)
         self._next_id += 1
-        self._url_to_code[url] = code
-        self._code_to_url[code] = url
+        self._url_to_code.put(url, code)
+        self._code_to_url.put(code, url)
         return code
 
     def expand(self, code: str) -> str:
