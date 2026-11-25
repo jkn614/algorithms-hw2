@@ -73,6 +73,14 @@ class HashTableTests(unittest.TestCase):
         self.assertEqual(len(table), 32)
         self.assertEqual(table.load_factor(), 2)
 
+    def test_find_missing_key_counts_all_nodes_in_chain(self):
+        table = HashTable(max_load=None)
+        table.put("a", 1)
+        table.put("q", 2)
 
+        value, comparisons = table.find("A")
+
+        self.assertIsNone(value)
+        self.assertEqual(comparisons, 2)
 if __name__ == "__main__":
     unittest.main()
