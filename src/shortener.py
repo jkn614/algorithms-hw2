@@ -4,12 +4,16 @@ from urllib.parse import urlsplit
 
 from src.base62 import encode
 from src.hash_table import HashTable
+from src.linear_probing import LinearProbingTable
 
 
 class URLShortener:
-    def __init__(self) -> None:
-        self._url_to_code = HashTable()
-        self._code_to_url = HashTable()
+    def __init__(
+        self,
+        table_class: type[HashTable] | type[LinearProbingTable] = HashTable,
+    ) -> None:
+        self._url_to_code = table_class()
+        self._code_to_url = table_class()
         self._next_id = 1
 
     def shorten(self, url: str) -> str:
