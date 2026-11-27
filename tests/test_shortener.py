@@ -1,9 +1,29 @@
 import unittest
+from functools import partial
+from unittest.mock import patch
 
 from src.shortener import URLShortener
+from src.hash_table import HashTable
+from src.linear_probing import LinearProbingTable
+
+_DEFAULT_URL_SHORTENER = URLShortener
 
 
 class URLShortenerTests(unittest.TestCase):
+    def test_hash_table_defaults_to_hash_table(self):
+        shortener = _DEFAULT_URL_SHORTENER()
+
+        self.assertIsInstance(shortener._url_to_code, HashTable)
+        self.assertIsInstance(shortener._code_to_url, HashTable)
+
+    def test_accepts_either_table_implementation(self):
+        for table_class in (HashTable, LinearProbingTable):
+            with self.subTest(table_class=table_class):
+                shortener = _DEFAULT_URL_SHORTENER(table_class=table_class)
+
+                self.assertIsInstance(shortener._url_to_code, table_class)
+                self.assertIsInstance(shortener._code_to_url, table_class)
+
     def test_shortens_and_expands_url(self):
         shortener = URLShortener()
         code = shortener.shorten("https://example.com/a")
@@ -31,6 +51,16 @@ class URLShortenerTests(unittest.TestCase):
             with self.subTest(code=code):
                 with self.assertRaises(ValueError):
                     shortener.expand(code)
+
+
+class LinearProbingURLShortenerTests(URLShortenerTests):
+    def setUp(self):
+        patcher = patch(
+            f"{__name__}.URLShortener",
+            partial(_DEFAULT_URL_SHORTENER, table_class=LinearProbingTable),
+        )
+        patcher.start()
+        self.addCleanup(patcher.stop)
 
 
 if __name__ == "__main__":

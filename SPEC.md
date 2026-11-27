@@ -27,6 +27,7 @@
 - 처음 받은 URL은 증가하는 정수 ID를 base62로 인코딩해 코드로 쓴다. 같은 URL을 다시 넣으면 같은 코드를 돌려준다.
 - `expand(code: str) -> str`은 원래 URL을 반환한다. 발급되지 않은 코드와 잘못된 입력은 `ValueError`다.
 - URL→코드와 코드→URL 인덱스는 구현한 해시 테이블로 저장한다.
+- `URLShortener`는 기본적으로 `HashTable`을 사용하며, 만들 때 `LinearProbingTable`도 선택할 수 있다.
 
 ## 5. 웹 서버
 
