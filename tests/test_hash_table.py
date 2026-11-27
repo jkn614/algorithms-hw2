@@ -129,5 +129,14 @@ class LinearProbingTests(HashTableTests):
 
         self.assertEqual(table.find("a"), (1, 1))
         self.assertEqual(table.find("i"), (2, 2))
+    def test_find_missing_key_counts_slots_until_empty(self):
+        table = self.table_class(capacity=8, max_load=None)
+        table.put("a", 1)
+        table.put("i", 2)
+
+        value, inspected = table.find("q")
+
+        self.assertIsNone(value)
+        self.assertEqual(inspected, 3)
 if __name__ == "__main__":
     unittest.main()
