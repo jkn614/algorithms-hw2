@@ -5,6 +5,7 @@ from http.server import HTTPServer
 from urllib.parse import urlencode
 
 from src import server as server_module
+from src.linear_probing import LinearProbingTable
 from src.shortener import URLShortener
 
 
@@ -31,6 +32,15 @@ class URLShortenerServerTests(unittest.TestCase):
         result = response.status, response.getheaders(), response.read().decode()
         connection.close()
         return result
+
+    def use_linear_shortener(self):
+        original_linear_shortener = server_module.LINEAR_SHORTENER
+        server_module.LINEAR_SHORTENER = URLShortener(
+            table_class=LinearProbingTable
+        )
+        self.addCleanup(
+            setattr, server_module, "LINEAR_SHORTENER", original_linear_shortener
+        )
 
     def test_home_page_has_url_form_and_table_link(self):
         status, _, body = self.request("GET", "/")
@@ -154,6 +164,73 @@ class URLShortenerServerTests(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn('href="http://codespaces.example/1"', body)
         self.assertIn(">http://codespaces.example/1</a>", body)
+
+    def test_navigation_is_present_on_default_and_linear_pages(self):
+        self.use_linear_shortener()
+
+        for path in ("/", "/table", "/linear", "/linear/table"):
+            with self.subTest(path=path):
+                status, _, body = self.request("GET", path)
+
+                self.assertEqual(status, 200)
+                self.assertIn('href="/">기본 홈</a>', body)
+                self.assertIn('href="/table">기본 해시 테이블</a>', body)
+                self.assertIn('href="/linear">선형 탐지 홈</a>', body)
+                self.assertIn(
+                    'href="/linear/table">선형 탐지 테이블</a>', body
+                )
+
+    def test_linear_shortener_page_shows_full_link_and_redirects(self):
+        self.use_linear_shortener()
+        payload = urlencode({"url": "https://example.com/linear"})
+        status, _, body = self.request(
+            "POST",
+            "/linear",
+            body=payload,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+        )
+
+        self.assertEqual(status, 200)
+        self.assertIn('href="https://127.0.0.1:', body)
+        self.assertIn(">https://127.0.0.1:", body)
+        self.assertIn("/linear/s/1</a>", body)
+
+        status, headers, _ = self.request("GET", "/linear/s/1")
+
+        self.assertEqual(status, 302)
+        self.assertIn(("Location", "https://example.com/linear"), headers)
+
+    def test_linear_table_shows_slots_hash_and_probe_counts(self):
+        self.use_linear_shortener()
+        urls = (
+            "https://example.com/item-0",
+            "https://example.com/item-20",
+        )
+        for url in urls:
+            payload = urlencode({"url": url})
+            self.request(
+                "POST",
+                "/linear",
+                body=payload,
+                headers={"Content-Type": "application/x-www-form-urlencoded"},
+            )
+
+        status, _, body = self.request("GET", "/linear/table")
+
+        self.assertEqual(status, 200)
+        self.assertIn("Linear probing table", body)
+        for url in urls:
+            self.assertIn(url, body)
+        self.assertIn("비어 있음", body)
+        self.assertIn("Initial slot", body)
+        self.assertIn("Actual slot", body)
+        self.assertIn("Slots inspected", body)
+        self.assertIn("Horner hash calculation", body)
+        self.assertEqual(body.count("<p><strong>Initial slot:</strong> 7</p>"), 2)
+        self.assertIn("<p><strong>Actual slot:</strong> 7</p>", body)
+        self.assertIn("<p><strong>Actual slot:</strong> 8</p>", body)
+        self.assertIn("<p><strong>Slots inspected:</strong> 1</p>", body)
+        self.assertIn("<p><strong>Slots inspected:</strong> 2</p>", body)
 
 
 if __name__ == "__main__":
